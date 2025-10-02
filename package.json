@@ -16,12 +16,12 @@
     "uuid": "^13.0.0"
   },
   "bin": {
-    "ternal": "./bin.js"
+    "ternal": "./index.js"
   },
   "scripts": {
     "dev": "node --env-file=.env ."
   },
-  "name": "ternal",
+  "name": "ternal-cli",
   "version": "1.0.0",
   "type": "module",
   "main": "index.js",

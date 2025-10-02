@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { editor } from "@inquirer/prompts";
 import { select, input } from "@inquirer/prompts";
 import { login, signUp } from "./src/auth.js";
@@ -9,7 +10,6 @@ export const start = async function () {
   showTitle();
   startSession();
   const session = db.prepare("SELECT * FROM session LIMIT 1").get();
-  console.log(session);
   if (session) {
     state.user = session.user_id;
     state.isLoggedIn = true;
