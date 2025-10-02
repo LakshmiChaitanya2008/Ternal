@@ -51,7 +51,7 @@ export const addNewEntry = async function () {
   home();
 };
 
-const viewSingleEntry = async function (e) {
+const viewEntry = async function (e) {
   console.clear();
   console.log(`Entry #${e.id}`);
   console.log(`Date: ${new Date(e.date).toLocaleString()}`);
@@ -63,19 +63,88 @@ const viewSingleEntry = async function (e) {
     message: "Press enter to go back...",
     choices: [{ name: "Back", value: "back" }],
   });
+  viewSingleEntry(e);
+};
+
+const editEntry = async function (e) {
+  const newText = await editor({
+    message: "Edit your entry:",
+    default: e.text,
+  });
+  const newMood = await select({
+    message: "Update mood:",
+    choices: ["happy", "okay", "sad", "bad"],
+    default: e.mood,
+  });
+  const newTags = await input({
+    message: "Update tags (comma separated):",
+    default: e.tags,
+  });
+
+  db.prepare(
+    `UPDATE entries SET text = ?, mood = ?, tags = ?, isSynced = 0 WHERE id = ?`
+  ).run(newText, newMood, newTags, e.id);
+
+  console.log("Entry updated locally!");
+  await input({
+    message: "Press enter to go back...",
+    choices: [{ name: "Back", value: "back" }],
+  });
+  viewSingleEntry(e);
+};
+
+const deleteEntry = async function (e) {
+  const confirm = await select({
+    message: "Are you sure you want to delete this entry?",
+    choices: ["Yes", "No"],
+  });
+
+  if (confirm === "No") return;
+
+  db.prepare("UPDATE entries SET isDeleted = 1, isSynced = 0 WHERE id = ?").run(
+    e.id
+  );
+
+  console.log("Entry deleted locally.");
+  await input({
+    message: "Press enter to go back...",
+    choices: [{ name: "Back", value: "back" }],
+  });
   viewEntries();
 };
 
+export const viewSingleEntry = async function (e) {
+  const choice = await select({
+    message: "Select Action: ",
+    choices: ["View", "Edit", "Delete", "Back"],
+  });
+
+  switch (choice) {
+    case "View":
+      viewEntry(e);
+      break;
+    case "Edit":
+      await editEntry(e);
+      break;
+    case "Delete":
+      await deleteEntry(e);
+      break;
+    case "Back":
+      return viewEntries();
+  }
+};
 export const viewEntries = async function () {
   console.clear();
 
   let entries;
   if (state.isLoggedIn) {
     entries = db
-      .prepare(`SELECT * FROM entries WHERE user_id = ?`)
+      .prepare(`SELECT * FROM entries WHERE user_id = ? AND isDeleted = 0`)
       .all(state.user);
   } else {
-    entries = db.prepare(`SELECT * FROM entries WHERE user_id IS NULL`).all();
+    entries = db
+      .prepare(`SELECT * FROM entries WHERE user_id IS NULL AND isDeleted = 0`)
+      .all();
   }
 
   if (!entries.length) {
@@ -100,7 +169,7 @@ export const viewEntries = async function () {
 
   choices.push({ name: "Back", value: "back" });
   const selected = await select({
-    message: "Search an entry:",
+    message: "Select an entry:",
     choices,
   });
 
@@ -118,14 +187,17 @@ export const showStats = async function () {
   let entries;
   if (state.isLoggedIn) {
     entries = db
-      .prepare(`SELECT * FROM entries WHERE user_id = ?`)
+      .prepare(`SELECT * FROM entries WHERE user_id = ? AND isDeleted = 0`)
       .all(state.user);
   } else {
-    entries = db.prepare(`SELECT * FROM entries WHERE user_id IS NULL`).all();
+    entries = db
+      .prepare(`SELECT * FROM entries WHERE user_id IS NULL AND isDeleted = 0`)
+      .all();
   }
   if (!entries.length) {
     console.log("No entries found!");
-    return;
+    await input({ message: "Press enter to go back..." });
+    return home();
   }
 
   const len = entries.length;
@@ -231,6 +303,30 @@ export const syncToCloud = async function () {
   ).run(...entries.map((e) => e.id), state.user);
 
   console.log(`Synced ${entries.length} entries to the cloud.`);
+
+  const deletedEntries = db
+    .prepare(`SELECT * FROM entries WHERE user_id = ? AND isDeleted = 1`)
+    .all(state.user);
+
+  if (deletedEntries.length) {
+    const idsToDelete = deletedEntries.map((e) => e.id);
+
+    const { error: delError } = await supabase
+      .from("entries")
+      .delete()
+      .in("id", idsToDelete);
+
+    if (delError) {
+      console.log("Error", delError.message);
+    } else {
+      db.prepare(
+        `DELETE FROM entries WHERE id IN (${idsToDelete
+          .map(() => "?")
+          .join(",")}) AND user_id = ?`
+      ).run(...idsToDelete, state.user);
+      console.log(`Deleted ${deletedEntries.length} entries from cloud.`);
+    }
+  }
 
   await input({
     message: "Press enter to go back...",

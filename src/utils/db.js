@@ -20,7 +20,8 @@ export const startSession = function () {
     mood TEXT,
     tags TEXT,
     user_id TEXT NULL,
-    isSynced BOOLEAN DEFAULT 0
+    isSynced BOOLEAN DEFAULT 0,
+    isDeleted BOOLEAN DEFAULT 0
   )
 `
   ).run();
