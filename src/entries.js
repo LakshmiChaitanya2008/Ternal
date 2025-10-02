@@ -1,16 +1,10 @@
 import { editor, input, search, select } from "@inquirer/prompts";
 import db from "./utils/db.js";
 import home from "./home.js";
-import CryptoJS from "crypto-js";
 import { state } from "./state.js";
 import supabase from "./utils/supabase.js";
-
-const SECRET_KEY = process.env.SECRET_KEY || "hello world";
-
-const encrypt = function (str) {
-  if (!str) return null;
-  return CryptoJS.AES.encrypt(String(str), SECRET_KEY).toString();
-};
+import { v4 as uuid } from "uuid";
+import { decrypt, encrypt } from "./utils/crypto.js";
 
 export const addNewEntry = async function () {
   const entry = await editor({
@@ -47,10 +41,12 @@ export const addNewEntry = async function () {
   const tags = await input({ message: "Add tags(comma separated):" });
   const date = new Date().toISOString();
   const userId = state.user;
+  const id = uuid();
+
   db.prepare(
-    `INSERT INTO entries (date, text, mood, tags, user_id, isSynced)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(date, entry, mood, tags, userId, 0);
+    `INSERT INTO entries (id, date, text, mood, tags, user_id, isSynced)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, date, entry, mood, tags, userId, 0);
   console.log("Entry saved locally!");
   home();
 };
@@ -72,9 +68,15 @@ const viewSingleEntry = async function (e) {
 
 export const viewEntries = async function () {
   console.clear();
-  const entries = db
-    .prepare(`SELECT * FROM entries WHERE user_id = ?`)
-    .all(state.user);
+
+  let entries;
+  if (state.isLoggedIn) {
+    entries = db
+      .prepare(`SELECT * FROM entries WHERE user_id = ?`)
+      .all(state.user);
+  } else {
+    entries = db.prepare(`SELECT * FROM entries WHERE user_id IS NULL`).all();
+  }
 
   if (!entries.length) {
     console.log("No entries!");
@@ -82,10 +84,19 @@ export const viewEntries = async function () {
     return home();
   }
 
-  const choices = entries.map((e) => ({
-    name: `${new Date(e.date).toLocaleString()} - ${e.mood} - ${e.tags}`,
-    value: e.id,
-  }));
+  const choices = entries.map((e) => {
+    const date = new Date(e.date).toLocaleString().slice(0, 16);
+    const tags = e.tags ? e.tags : "—";
+    const isSynced = e.isSynced ? "Synced" : "Not Synced";
+
+    return {
+      name: `${date} | ${e.mood.padEnd(10, " ")} | ${tags.padEnd(
+        20,
+        " "
+      )} | ${isSynced}`,
+      value: e.id,
+    };
+  });
 
   choices.push({ name: "Back", value: "back" });
   const selected = await select({
@@ -104,9 +115,14 @@ const barLength = 30;
 export const showStats = async function () {
   console.clear();
 
-  const entries = db
-    .prepare(`SELECT * FROM entries where user_id = ?`)
-    .all(state.user);
+  let entries;
+  if (state.isLoggedIn) {
+    entries = db
+      .prepare(`SELECT * FROM entries WHERE user_id = ?`)
+      .all(state.user);
+  } else {
+    entries = db.prepare(`SELECT * FROM entries WHERE user_id IS NULL`).all();
+  }
   if (!entries.length) {
     console.log("No entries found!");
     return;
@@ -194,6 +210,7 @@ export const syncToCloud = async function () {
 
   const { data, error } = await supabase.from("entries").insert(
     entries.map((e) => ({
+      id: e.id,
       text: encrypt(e.text),
       mood: encrypt(e.mood),
       tags: encrypt(e.tags),
@@ -214,14 +231,15 @@ export const syncToCloud = async function () {
   ).run(...entries.map((e) => e.id), state.user);
 
   console.log(`Synced ${entries.length} entries to the cloud.`);
+
+  await input({
+    message: "Press enter to go back...",
+    choices: [{ name: "Back", value: "back" }],
+  });
+  home();
 };
 
-function decryptEntry(encryptedText) {
-  const bytes = CryptoJS.AES.decrypt(encryptedText, SECRET_KEY);
-  return bytes.toString(CryptoJS.enc.Utf8);
-}
-
-export const fetchEntries = async function () {
+export const fetchEntriesFromCloud = async function () {
   const { data: cloudEntries, error: fetchError } = await supabase
     .from("entries")
     .select("*")
@@ -229,21 +247,24 @@ export const fetchEntries = async function () {
 
   if (fetchError) {
     console.log("Error fetching cloud entries:", fetchError.message);
-  } else {
-    for (const e of cloudEntries) {
-      const decryptedText = decryptEntry(e.text, SECRET_KEY);
-
-      const exists = db
-        .prepare("SELECT id FROM entries WHERE id = ?")
-        .get(e.id);
-
-      if (!exists) {
-        db.prepare(
-          `INSERT INTO entries (id, text, mood, tags, date, user_id, synced)
-           VALUES (?, ?, ?, ?, ?, ?, 1)`
-        ).run(e.id, decryptedText, e.mood, e.tags, e.date, e.user_id, 1);
-      }
-    }
-    console.log(`📥 Synced ${cloudEntries.length} entries from the cloud.`);
+    return;
   }
+
+  for (const e of cloudEntries) {
+    const dText = decrypt(e.text, SECRET_KEY);
+    const dMood = decrypt(e.mood, SECRET_KEY);
+    const dTags = decrypt(e.tags, SECRET_KEY);
+    const dDate = decrypt(e.date, SECRET_KEY);
+
+    const exists = db.prepare("SELECT id FROM entries WHERE id = ?").get(e.id);
+
+    if (!exists) {
+      db.prepare(
+        `INSERT INTO entries (id, text, mood, tags, date, user_id, isSynced)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).run(e.id, dText, dMood, dTags, dDate, e.user_id, 1);
+    }
+  }
+
+  console.log(`\n Synced ${cloudEntries.length} entries from cloud.`);
 };

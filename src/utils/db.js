@@ -14,7 +14,7 @@ export const startSession = function () {
   db.prepare(
     `
   CREATE TABLE IF NOT EXISTS entries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT,
     date TEXT,
     text TEXT,
     mood TEXT,

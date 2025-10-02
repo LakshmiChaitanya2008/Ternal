@@ -4,7 +4,7 @@ import db from "./utils/db.js";
 import { state } from "./state.js";
 import { start } from "../index.js";
 import home from "./home.js";
-import { fetchEntries } from "./entries.js";
+import { fetchEntriesFromCloud } from "./entries.js";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -30,7 +30,10 @@ export const login = async function () {
 
   if (error) {
     console.log("Login failed: Invalid email/password", error.message);
-    return login();
+    await input({
+      message: "Press enter...",
+    });
+    return start();
   }
 
   db.prepare("DELETE FROM session").run();
@@ -59,9 +62,9 @@ export const login = async function () {
     }
   }
 
-  fetchEntries();
+  fetchEntriesFromCloud();
 
-  home();
+  start();
 };
 
 export const signUp = async function () {
