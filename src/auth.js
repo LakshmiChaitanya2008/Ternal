@@ -5,6 +5,7 @@ import { state } from "./state.js";
 import { start } from "../index.js";
 import home from "./home.js";
 import { fetchEntriesFromCloud } from "./entries.js";
+import { encrypt, generateKey } from "./utils/crypto.js";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -37,8 +38,12 @@ export const login = async function () {
   }
 
   db.prepare("DELETE FROM session").run();
-  db.prepare(`INSERT INTO session (user_id) VALUES ('${data.user.id}')`).run();
+  db.prepare(
+    `INSERT INTO session (user_id, email) VALUES ('${data.user.id}', '${data.user.email}')`
+  ).run();
   state.user = data.user.id;
+  state.email = data.user.email;
+  state.SECRET_KEY = generateKey(psw);
   console.log("Login successful!");
 
   const offlineEntries = db
@@ -69,15 +74,14 @@ export const login = async function () {
 
 export const signUp = async function () {
   console.clear();
-  const name = await input({ message: "Enter username:" });
-  if (!name) {
-    console.log("Enter Proper Username!");
-    return signUp();
-  }
+
   const email = await input({ message: "Enter email:" });
   if (!emailRegex.test(email)) {
     console.log("Enter Proper Email!");
-    return login();
+    await input({
+      message: "Press enter...",
+    });
+    return signUp();
   }
   const psw = await password({
     message: "Enter Password:",
@@ -86,6 +90,9 @@ export const signUp = async function () {
 
   if (!psw) {
     console.log("Enter Valid Password!");
+    await input({
+      message: "Press enter...",
+    });
     return signUp();
   }
 
@@ -96,6 +103,9 @@ export const signUp = async function () {
 
   if (psw !== cpsw) {
     console.log("Passwords do not match!");
+    await input({
+      message: "Press enter...",
+    });
     return signUp();
   }
   const { data, error } = await supabase.auth.signUp({
@@ -109,6 +119,9 @@ export const signUp = async function () {
   }
 
   console.log("Sign Up Successfull! Please Login...");
+  await input({
+    message: "Press enter...",
+  });
   await login();
 };
 

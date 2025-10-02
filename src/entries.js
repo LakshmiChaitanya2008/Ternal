@@ -5,6 +5,7 @@ import { state } from "./state.js";
 import supabase from "./utils/supabase.js";
 import { v4 as uuid } from "uuid";
 import { decrypt, encrypt } from "./utils/crypto.js";
+import chalk from "chalk";
 
 export const addNewEntry = async function () {
   const entry = await editor({
@@ -51,19 +52,28 @@ export const addNewEntry = async function () {
   home();
 };
 
-const viewEntry = async function (e) {
+export const viewEntry = async function (e) {
   console.clear();
-  console.log(`Entry #${e.id}`);
-  console.log(`Date: ${new Date(e.date).toLocaleString()}`);
-  console.log(`Mood: ${e.mood}`);
-  console.log(`Tags: ${e.tags}`);
-  console.log("Content:");
-  console.log(e.text);
-  await input({
-    message: "Press enter to go back...",
-    choices: [{ name: "Back", value: "back" }],
-  });
-  viewSingleEntry(e);
+
+  const entry = db.prepare("SELECT * FROM entries WHERE id = ?").get(e.id);
+
+  console.log(
+    `${chalk.cyanBright("Date   :")} ${new Date(entry.date).toLocaleString()}`
+  );
+
+  console.log(`${chalk.cyanBright("Mood   :")} ${entry.mood || "—"}`);
+  console.log(
+    `${chalk.cyanBright("Tags   :")} ${
+      entry.tags && entry.tags.trim() ? entry.tags : "—"
+    }`
+  );
+
+  console.log(chalk.cyanBright("Content:"));
+  console.log(chalk.white(entry.text));
+
+  await input({ message: "Press enter to go back..." });
+
+  viewSingleEntry(entry);
 };
 
 const editEntry = async function (e) {
@@ -114,6 +124,7 @@ const deleteEntry = async function (e) {
 };
 
 export const viewSingleEntry = async function (e) {
+  console.clear();
   const choice = await select({
     message: "Select Action: ",
     choices: ["View", "Edit", "Delete", "Back"],
@@ -280,7 +291,7 @@ export const syncToCloud = async function () {
     return;
   }
 
-  const { data, error } = await supabase.from("entries").insert(
+  const { data, error } = await supabase.from("entries").upsert(
     entries.map((e) => ({
       id: e.id,
       text: encrypt(e.text),
@@ -288,7 +299,10 @@ export const syncToCloud = async function () {
       tags: encrypt(e.tags),
       date: encrypt(e.date),
       user_id: e.user_id,
-    }))
+    })),
+    {
+      onConflict: "id",
+    }
   );
 
   if (error) {
@@ -347,10 +361,10 @@ export const fetchEntriesFromCloud = async function () {
   }
 
   for (const e of cloudEntries) {
-    const dText = decrypt(e.text, SECRET_KEY);
-    const dMood = decrypt(e.mood, SECRET_KEY);
-    const dTags = decrypt(e.tags, SECRET_KEY);
-    const dDate = decrypt(e.date, SECRET_KEY);
+    const dText = decrypt(e.text);
+    const dMood = decrypt(e.mood);
+    const dTags = decrypt(e.tags);
+    const dDate = decrypt(e.date);
 
     const exists = db.prepare("SELECT id FROM entries WHERE id = ?").get(e.id);
 

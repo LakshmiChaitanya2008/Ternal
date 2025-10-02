@@ -6,7 +6,8 @@ export const startSession = function () {
   db.prepare(
     `
     CREATE TABLE IF NOT EXISTS session (
-        user_id TEXT
+        user_id TEXT,
+        email TEXT
   )    
 `
   ).run();

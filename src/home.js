@@ -2,10 +2,13 @@ import { select } from "@inquirer/prompts";
 import { addNewEntry, showStats, syncToCloud, viewEntries } from "./entries.js";
 import { showTitle, state } from "./state.js";
 import { logOut } from "./auth.js";
+import chalk from "chalk";
 
 export default async function () {
   console.clear();
   showTitle();
+  console.log();
+
   const choices = [
     { name: "Add New Entry", value: "new_entry" },
     { name: "View Entries", value: "view_entries" },
@@ -13,6 +16,10 @@ export default async function () {
   ];
 
   if (state.isLoggedIn) {
+    console.log(
+      chalk.yellowBright("Logged in as " + chalk.underline(state.email))
+    );
+    console.log();
     choices.push(
       { name: "Sync to Cloud", value: "sync" },
       { name: "Logout", value: "logout" }
